@@ -311,6 +311,25 @@ test("full-deck scenery renders efficiently and stops drawing when idle", async 
   console.log("Full-deck rendering:", first);
 });
 
+test("extra effects at night keep the full board moving within the draw budget", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await ready(page, "?full&vfx&night");
+  await page.waitForTimeout(500);
+  const first = await page.evaluate(() => window.tabletopTest.stats());
+  // Water, wind, windpumps and fireflies all need fresh frames.
+  await expect.poll(() => page.evaluate(() => window.tabletopTest.stats().frame)).toBeGreaterThan(first.frame + 5);
+  const stats = await page.evaluate(() => window.tabletopTest.stats());
+  expect(stats.calls).toBeLessThan(350);
+  expect(stats.triangles).toBeLessThan(150000);
+  await page.screenshot({ path: "test-results/tabletop-night-effects.png", fullPage: true });
+  expect(errors).toEqual([]);
+  console.log("Night effects rendering:", stats);
+});
+
 test("zooming out sheds scenery detail and zooming back in restores it", async ({ page }) => {
   await ready(page, "?full");
   const zoomTo = async (label: "Zoom in" | "Zoom out", clicks: number) => {

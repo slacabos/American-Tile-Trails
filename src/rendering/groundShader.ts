@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { RegionWeights } from "./regions";
+import { WIND_DIRECTION_GLSL } from "./wind";
 
 /** Per-instance corner weights (farmland, forest, desert); meadow is the rest. */
 export const REGION_ATTRIBUTES = ["regionNW", "regionNE", "regionSW", "regionSE"] as const;
@@ -96,6 +97,7 @@ uniform vec3 forestTint;
 uniform vec3 desertTint;
 varying vec3 vRegion;
 varying vec2 vRegionWorld;
+const vec2 cropWind = ${WIND_DIRECTION_GLSL};
 ${WATER_FUNCTIONS}
 `;
 
@@ -110,6 +112,12 @@ vec3 landscape = meadowWeight * vec3(1.0)
   + vRegion.y * forestTint
   + vRegion.z * desertTint * (0.93 + 0.14 * speck);
 diffuseColor.rgb *= mix(vec3(1.0), landscape, grass);
+// With extra effects, gusts roll across the crops as bands of lighter stalks.
+if (waterOn > 0.5) {
+  float along = dot(vRegionWorld, cropWind);
+  float gust = sin(along * 5.0 - waterTime * 1.3) * 0.65 + sin(along * 11.0 - waterTime * 2.2 + vRegionWorld.y * 3.0) * 0.35;
+  diffuseColor.rgb *= 1.0 + 0.08 * gust * vRegion.x * grass;
+}
 ${WATER_BODY}
 `;
 

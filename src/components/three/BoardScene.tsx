@@ -24,7 +24,8 @@ import {
   NightLights,
   Scenery,
   SceneryProvider,
-  WaterMotion,
+  AmbientMotion,
+  Fireflies,
 } from "./Scenery";
 import { useTranslations } from "@/hooks/useTranslations";
 import { PlacementGrid } from "./PlacementGrid";
@@ -579,8 +580,9 @@ export function BoardScene({
         <SceneryProvider>
           <NightLights night={night} />
           <LandingDriver landing={landing} frame={landingFrame} onDone={landed} />
-          <WaterMotion enabled={extraVfx} />
+          <AmbientMotion enabled={extraVfx} />
           <Scenery records={snapshot.tiles} seed={state.sceneSeed} landing={landingFrame} landingKey={landing?.key} />
+          {night && extraVfx && <Fireflies records={snapshot.tiles} seed={state.sceneSeed} />}
           <LandingDust landing={landingFrame} night={night} />
           {snapshot.legal.map((position) => (
             <CellOutline key={positionKey(position)} x={position.x} z={position.y} fill />
@@ -699,7 +701,7 @@ export function TilePreviewScene({
         <Daylight night={night} />
         <SceneryProvider>
           <NightLights night={night} />
-          <WaterMotion enabled={extraVfx && !!tile?.river} />
+          <AmbientMotion enabled={extraVfx} />
           <Scenery records={records} />
         </SceneryProvider>
       </Canvas>

@@ -6,7 +6,8 @@ import { buildWarehouses } from "./warehouseGeometry";
 import { createWaterUniforms, makeRegional } from "./groundShader";
 import { GLOW_COLOR, PaintBatch, place, type PropBuilder } from "./paint";
 import { buildLandmark, LANDMARK_RADIUS, LANDMARKS } from "./landmarks";
-import { buildSpecies, type Species, speciesFor, vegetationSpots } from "./vegetation";
+import { buildSpecies, buildWindpumpWheel, type Species, speciesFor, SWAY, vegetationSpots } from "./vegetation";
+import { makeSpinning, makeSwaying } from "./wind";
 import { isFine, LodTracker } from "./lod";
 
 /** Windows, lamps and warehouse glass after dark: bright enough to read as lit. */
@@ -139,6 +140,49 @@ export class SceneryLibrary {
       this.species.set(key, geometry);
     }
     return geometry;
+  }
+
+  /** The windpump wheel, drawn apart from its tower so it can spin. */
+  getWindpumpWheel(coarse = false): THREE.BufferGeometry {
+    const key = `windpump-wheel${coarse ? "-coarse" : ""}`;
+    let geometry = this.species.get(key);
+    if (!geometry) {
+      geometry = buildWindpumpWheel(coarse);
+      this.species.set(key, geometry);
+    }
+    return geometry;
+  }
+
+  /**
+   * How a species is drawn: bending in the wind if it sways, otherwise with the
+   * shared paint. The depth material keeps its shadow bending along with it.
+   */
+  plantMaterials(species: Species): { material: THREE.Material; depth?: THREE.Material } {
+    const amplitude = SWAY[species];
+    if (!amplitude) return { material: this.paintMaterial() };
+    return this.windMaterials(`sway-${amplitude}`, (material) => makeSwaying(material, this.water, amplitude));
+  }
+
+  /** The windpump wheel's material and shadow, turning in the wind. */
+  wheelMaterials(): { material: THREE.Material; depth: THREE.Material } {
+    return this.windMaterials("wheel", (material) => makeSpinning(material, this.water));
+  }
+
+  private windMaterials(
+    key: string,
+    patch: (material: THREE.Material) => void,
+  ): { material: THREE.Material; depth: THREE.Material } {
+    let material = this.materials.get(key);
+    let depth = this.materials.get(`${key}-depth`);
+    if (!material || !depth) {
+      material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.87 });
+      depth = new THREE.MeshDepthMaterial();
+      patch(material);
+      patch(depth);
+      this.materials.set(key, material);
+      this.materials.set(`${key}-depth`, depth);
+    }
+    return { material, depth };
   }
 
   /** A prospective tile shows a complete standalone section before placement. */
