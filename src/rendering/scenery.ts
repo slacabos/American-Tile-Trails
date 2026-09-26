@@ -16,6 +16,10 @@ const NIGHT_GLOW = 2;
 const LAMP_POOL_OPACITY = 0.85;
 /** Diameter of a lamppost's pool of light, in tile units. */
 const LAMP_POOL_SIZE = 0.34;
+/** How strongly a warehouse entrance lights the lot in front of it at night. */
+const ENTRANCE_SPILL_OPACITY = 0.7;
+/** Half-width of the entrance light where it leaves the doors, across its unit square. */
+const ENTRANCE_SPILL_DOOR = 0.22;
 import { WarehouseComplex, warehouseLayout } from "./warehouseLayout";
 import { canonicalTile, insidePolygon, Point, ROAD_WIDTH, sceneryKey, zonePolygon } from "./tileLayout";
 
@@ -112,6 +116,7 @@ export class SceneryLibrary {
       metal: this.material("#667b7e"),
       marking: this.material("#eef0dd"),
       sign: this.label("costco"),
+      spill: this.entranceSpillMaterial(),
     });
   }
 
@@ -242,19 +247,19 @@ export class SceneryLibrary {
   }
 
   /**
-   * A soft warm disc under each lamppost, added onto the ground at night. It
-   * stands in for a real light, which would cost every fragment on the board.
+   * Warm light added onto the ground at night, shaped by `alpha(u, v)` over the
+   * unit square. It stands in for a real light, which would cost every fragment
+   * on the board.
    */
-  private lampPoolMaterial(): THREE.MeshBasicMaterial {
-    let material = this.materials.get("lamp-pool") as THREE.MeshBasicMaterial | undefined;
+  private groundLight(key: string, alpha: (u: number, v: number) => number, opacity: number): THREE.MeshBasicMaterial {
+    let material = this.materials.get(key) as THREE.MeshBasicMaterial | undefined;
     if (!material) {
       const size = 64;
       const data = new Uint8Array(size * size * 4);
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
-          const r = Math.min(1, Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) / (size / 2));
-          const i = (y * size + x) * 4;
-          data.set([255, 255, 255, Math.round(255 * (1 - r) ** 1.6)], i);
+          const value = THREE.MathUtils.clamp(alpha((x + 0.5) / size, (y + 0.5) / size), 0, 1);
+          data.set([255, 255, 255, Math.round(255 * value)], (y * size + x) * 4);
         }
       }
       const texture = new THREE.DataTexture(data, size, size);
@@ -264,14 +269,40 @@ export class SceneryLibrary {
         map: texture,
         color: GLOW_COLOR,
         transparent: true,
-        opacity: LAMP_POOL_OPACITY,
+        opacity,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        side: THREE.DoubleSide,
         visible: this.night,
       });
-      this.materials.set("lamp-pool", material);
+      this.materials.set(key, material);
     }
     return material;
+  }
+
+  /** A soft disc under each lamppost. */
+  private lampPoolMaterial(): THREE.MeshBasicMaterial {
+    return this.groundLight(
+      "lamp-pool",
+      (u, v) => (1 - Math.min(1, Math.hypot(u - 0.5, v - 0.5) * 2)) ** 1.6,
+      LAMP_POOL_OPACITY,
+    );
+  }
+
+  /**
+   * Light from a warehouse entrance: bright at the doors (v = 0), fanning out
+   * across the lot and fading with distance, with soft sides.
+   */
+  private entranceSpillMaterial(): THREE.MeshBasicMaterial {
+    return this.groundLight(
+      "entrance-spill",
+      (u, v) => {
+        const half = ENTRANCE_SPILL_DOOR + (0.5 - ENTRANCE_SPILL_DOOR) * v;
+        const across = THREE.MathUtils.smoothstep(half - Math.abs(u - 0.5), 0, 0.12 + 0.1 * v);
+        return across * (1 - v) ** 1.8;
+      },
+      ENTRANCE_SPILL_OPACITY,
+    );
   }
 
   private night = false;
@@ -284,8 +315,10 @@ export class SceneryLibrary {
       const material = this.materials.get(key) as THREE.MeshStandardMaterial | undefined;
       if (material) material.emissiveIntensity = night ? NIGHT_GLOW : 0;
     }
-    const pool = this.materials.get("lamp-pool");
-    if (pool) pool.visible = night;
+    for (const key of ["lamp-pool", "entrance-spill"]) {
+      const light = this.materials.get(key);
+      if (light) light.visible = night;
+    }
   }
 
   /** Animated water is an optional extra; off, rivers keep their painted look. */
