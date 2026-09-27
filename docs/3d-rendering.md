@@ -73,10 +73,9 @@ glass's too (entrance and a band of windows along every exterior wall, with a
 wedge of light fanning from the doors across the lot), and each lamppost casts a
 soft warm pool of light on the ground (an additive disc, cheaper than a real
 light). Night lighting swaps the sun for a cool moon and darkens the table; the
-UI switches palettes through
-`:root[data-time="night"]` tokens. The choice is stored in `localStorage`,
-defaults to the system dark-mode setting, and toggles from the HUD's settings
-panel, the setup screen, or the `N` key.
+UI switches palettes through `:root[data-time="night"]` tokens. The choice is
+stored in `localStorage`, defaults to the system dark-mode setting, and toggles
+from the HUD's settings panel, the setup screen, or the `N` key.
 
 ### Sun, moon and grounding shade
 
