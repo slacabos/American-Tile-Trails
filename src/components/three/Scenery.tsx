@@ -304,7 +304,7 @@ function LandingWarehouse({ record, landing }: { record: TileRecord; landing: Re
       rotation={[0, (-record.tile.orientation * Math.PI) / 2, 0]}
     >
       {model.parts.map((part, i) => (
-        <mesh key={i} geometry={part.geometry} material={part.material} castShadow receiveShadow />
+        <mesh key={i} geometry={part.geometry} material={part.material} castShadow={!part.glowOnly} receiveShadow />
       ))}
     </group>
   );
@@ -353,7 +353,7 @@ function WarehouseModel({ records }: { records: TileRecord[] }) {
   return (
     <group dispose={null} name="connected-warehouses">
       {model.parts.map((part, i) => (
-        <mesh key={i} geometry={part.geometry} material={part.material} castShadow receiveShadow />
+        <mesh key={i} geometry={part.geometry} material={part.material} castShadow={!part.glowOnly} receiveShadow />
       ))}
     </group>
   );

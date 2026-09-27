@@ -69,12 +69,13 @@ a separate instanced mesh so it can spin. Every windpump faces into the wind.
 Solid-coloured props merge into one vertex-coloured mesh per tile type
 (`paint.ts`). A second mesh holds windows and lamps. At night,
 `SceneryLibrary.setNight()` turns on their emissive glow, and the warehouse
-glass's too, and each lamppost casts a soft warm pool of light on the ground (an
-additive disc, cheaper than a real light). Night lighting swaps the sun for a
-cool moon and darkens the table; the UI switches palettes through
-`:root[data-time="night"]` tokens. The choice is stored in `localStorage`,
-defaults to the system dark-mode setting, and toggles from the HUD's settings
-panel, the setup screen, or the `N` key.
+glass's too (entrance and a band of windows along every exterior wall, with a
+wedge of light fanning from the doors across the lot), and each lamppost casts a
+soft warm pool of light on the ground (an additive disc, cheaper than a real
+light). Night lighting swaps the sun for a cool moon and darkens the table; the
+UI switches palettes through `:root[data-time="night"]` tokens. The choice is
+stored in `localStorage`, defaults to the system dark-mode setting, and toggles
+from the HUD's settings panel, the setup screen, or the `N` key.
 
 ### Sun, moon and grounding shade
 

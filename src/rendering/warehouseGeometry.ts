@@ -14,6 +14,25 @@ export interface WarehouseMaterials {
   metal: THREE.Material;
   marking: THREE.Material;
   sign: THREE.Material;
+  /** Light fanning out from the entrance at night; it must not cast a shadow. */
+  spill: THREE.Material;
+}
+
+/** Spacing, width and height of the lit windows along exterior walls. */
+const WINDOW_SPACING = 0.09;
+const WINDOW_WIDTH = 0.045;
+const WINDOW_HEIGHT = 0.014;
+/** Size of the light cast on the lot by the entrance, along and away from the wall. */
+const SPILL_WIDTH = 0.5;
+const SPILL_DEPTH = 0.22;
+
+function clampToTile(geometry: THREE.BufferGeometry, tile: Position): void {
+  const vertices = geometry.getAttribute("position");
+  for (let i = 0; i < vertices.count; i++) {
+    vertices.setX(i, THREE.MathUtils.clamp(vertices.getX(i), tile.x - 0.5, tile.x + 0.5));
+    vertices.setZ(i, THREE.MathUtils.clamp(vertices.getZ(i), tile.y - 0.5, tile.y + 0.5));
+  }
+  geometry.computeVertexNormals();
 }
 
 /** Batch the whole board's warehouses by material, without interior facades. */
@@ -35,16 +54,9 @@ export function buildWarehouses(complexes: WarehouseComplex[], materials: Wareho
     tile?: Position,
   ) => {
     const geometry = new THREE.BoxGeometry(width, height, depth).rotateY(yaw).translate(point[0], y, point[1]);
-    if (tile) {
-      // Trim wall/curb ends at tile boundaries. Diagonal trim must not project
-      // into a neighboring tile, and collinear fascia must still meet exactly.
-      const vertices = geometry.getAttribute("position");
-      for (let i = 0; i < vertices.count; i++) {
-        vertices.setX(i, THREE.MathUtils.clamp(vertices.getX(i), tile.x - 0.5, tile.x + 0.5));
-        vertices.setZ(i, THREE.MathUtils.clamp(vertices.getZ(i), tile.y - 0.5, tile.y + 0.5));
-      }
-      geometry.computeVertexNormals();
-    }
+    // Trim wall/curb ends at tile boundaries. Diagonal trim must not project
+    // into a neighboring tile, and collinear fascia must still meet exactly.
+    if (tile) clampToTile(geometry, tile);
     add(geometry, material);
   };
   const midpoint = (wall: WarehouseWall, offset = 0): Point => [
@@ -67,6 +79,16 @@ export function buildWarehouses(complexes: WarehouseComplex[], materials: Wareho
         box(midpoint(wall, -0.006), 0.076, wall.length, 0.152, 0.012, materials.wall, yaw(wall), section.position);
         box(midpoint(wall, -0.007), 0.132, wall.length, 0.024, 0.014, materials.fascia, yaw(wall), section.position);
         box(midpoint(wall, -0.007), 0.174, wall.length, 0.013, 0.014, materials.trim, yaw(wall), section.position);
+        // A clerestory band of windows, lit from inside after dark.
+        const windows = Math.floor(wall.length / WINDOW_SPACING);
+        for (let i = 0; i < windows; i++) {
+          const t = (i + 0.5) / windows;
+          const point: Point = [
+            wall.a[0] + (wall.b[0] - wall.a[0]) * t + wall.normal[0] * 0.001,
+            wall.a[1] + (wall.b[1] - wall.a[1]) * t + wall.normal[1] * 0.001,
+          ];
+          box(point, 0.106, WINDOW_WIDTH, WINDOW_HEIGHT, 0.004, materials.glass, yaw(wall), section.position);
+        }
         // Stalls follow the exterior of the complex, with room for the driveway.
         const count = Math.floor(wall.length / 0.065);
         for (let i = 1; i < count; i++) {
@@ -136,6 +158,28 @@ export function buildWarehouses(complexes: WarehouseComplex[], materials: Wareho
         .translate(sign[0], 0.182, sign[1]),
       materials.sign,
     );
+    // Light from the doors fans out across the lot: v runs from the doors outwards.
+    const along: Point = [
+      (entrance.b[0] - entrance.a[0]) / entrance.length,
+      (entrance.b[1] - entrance.a[1]) / entrance.length,
+    ];
+    const door = midpoint(entrance, 0.002);
+    const corner = (u: number, v: number) => [
+      door[0] + along[0] * (u - 0.5) * SPILL_WIDTH + entrance.normal[0] * v * SPILL_DEPTH,
+      0.005,
+      door[1] + along[1] * (u - 0.5) * SPILL_WIDTH + entrance.normal[1] * v * SPILL_DEPTH,
+    ];
+    const spill = new THREE.BufferGeometry();
+    spill.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute([...corner(0, 0), ...corner(1, 0), ...corner(1, 1), ...corner(0, 1)], 3),
+    );
+    spill.setAttribute("normal", new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+    spill.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+    spill.setIndex([0, 1, 2, 0, 2, 3]);
+    const front = complex.sections.find((section) => section.walls.includes(entrance));
+    if (front) clampToTile(spill, front.position);
+    add(spill, materials.spill);
     if (complex.loadingBay) {
       const dock = complex.loadingBay;
       box(midpoint(dock, 0.003), 0.053, 0.13, 0.09, 0.012, materials.metal, yaw(dock));
@@ -147,7 +191,7 @@ export function buildWarehouses(complexes: WarehouseComplex[], materials: Wareho
   for (const [material, sources] of batches) {
     const geometry = mergeGeometries(sources);
     sources.forEach((source) => source.dispose());
-    if (geometry) parts.push({ geometry, material });
+    if (geometry) parts.push({ geometry, material, glowOnly: material === materials.spill });
   }
   return { parts };
 }

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SceneryLibrary } from "@/rendering/scenery";
 import { buildDeck, getStartTile } from "@/tileLibrary";
 import { LANDMARK_RADIUS, LANDMARKS, landmarkConflict } from "@/rendering/landmarks";
+import { warehouseLayout } from "@/rendering/warehouseLayout";
 
 const tiles = [
   ...new Map(
@@ -109,6 +110,26 @@ describe("night lighting", () => {
     expect(pools("road-end")[0].material.visible).toBe(true);
     library.setNight(false);
     expect(starter[0].material.visible).toBe(false);
+    library.dispose();
+  });
+
+  it("lights Costco windows and spills light in front of the entrance at night", () => {
+    const library = new SceneryLibrary();
+    const tile = tiles.find((candidate) => candidate.id === "costco-cap")!;
+    const { parts } = library.createWarehouses(warehouseLayout([{ tile, position: { x: 0, y: 0 } }]));
+    const glass = parts.find(
+      (part) =>
+        (part.material as THREE.MeshStandardMaterial).emissive?.getHex() !== undefined &&
+        (part.material as THREE.MeshStandardMaterial).color.getHexString() === "254c58",
+    )!;
+    // Entrance glass plus at least one window per exterior wall.
+    expect(glass.geometry.getAttribute("position").count / 24).toBeGreaterThan(4);
+    const spill = parts.filter((part) => part.glowOnly);
+    expect(spill).toHaveLength(1);
+    expect(spill[0].material.visible).toBe(false);
+    library.setNight(true);
+    expect(spill[0].material.visible).toBe(true);
+    expect((glass.material as THREE.MeshStandardMaterial).emissiveIntensity).toBeGreaterThan(0);
     library.dispose();
   });
 });
