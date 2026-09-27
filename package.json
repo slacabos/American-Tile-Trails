@@ -1,6 +1,6 @@
 {
   "name": "american-tile-trails",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "A Carcassonne-inspired board game set in the United States with McDonalds abbeys and Costco castles.",
   "main": "src/index.ts",
   "type": "module",
