@@ -57,11 +57,14 @@ tints only where the per-type grass mask is white, so roads, lots, water and
 painted markings keep their colours. Farmland adds world-space crop rows; desert
 adds speckle.
 
-`vegetation.ts` lists plant spots per tile type (tree, shrub, sapling). The board
-draws them in one instanced mesh per species. Each spot's region is sampled from
-the weights, so borders mingle: round trees and bushes in meadow, pines in
-forest, hay bales and fences on farmland, cacti and red rocks in the desert. The
-placement ghost and the tile preview always show meadow.
+`vegetation.ts` lists plant spots per tile type (tree, shrub, sapling). The
+board draws them in one instanced mesh per species. Each spot's region is
+sampled from the weights, so borders mingle: round trees and bushes in meadow,
+pines in forest, hay bales and fences on farmland, cacti and red rocks in the
+desert. The placement ghost and the tile preview always show meadow. A tenth of
+the tree spots in farmland and desert get a classic farm windpump instead
+(`isWindpumpSpot`): a lattice tower, tail vane and stock tank, with its wheel in
+a separate instanced mesh so it can spin. Every windpump faces into the wind.
 
 Solid-coloured props merge into one vertex-coloured mesh per tile type
 (`paint.ts`). A second mesh holds windows and lamps. At night,
@@ -97,14 +100,25 @@ so the regional tint still applies over it.
 
 The HUD's settings panel (or `G`) switches optional effects; the choice is
 stored in `localStorage` and starts on, unless the player prefers reduced
-motion. Today that is animated water: each
-river tile gets a depth mask (`paintWaterDepth`, bank to channel centre), and
-the ground shader swaps the painted water for world-space ripples that bend
-the lighting normal, glossy glints, caustics and foam at the banks. Working in
-world space keeps the pattern continuous across tiles. All ground materials
-share one set of water uniforms on the `SceneryLibrary`. `WaterMotion` advances
-the clock and requests the next frame only while effects are on, so with them
-off the canvas stays on demand rendering with the static painted water.
+motion. Each river tile gets a depth mask (`paintWaterDepth`, bank to channel
+centre), and the ground shader swaps the painted water for world-space ripples
+that bend the lighting normal, glossy glints, caustics and foam at the banks.
+Working in world space keeps the pattern continuous across tiles. All ground
+materials share one set of water uniforms on the `SceneryLibrary`.
+
+The wind (`wind.ts`) blows from the south-south-east, so windpump wheels face
+the tabletop camera. Gusts roll across the board along it. Trees, bushes and
+ferns bend with it in the vertex shader (`makeSwaying`), by the square of their
+height so trunks stay rooted, and a matching depth material keeps their shadows
+in step. Windpump wheels spin about their hub (`makeSpinning`), and bands of
+lighter crops ripple across farmland. At night, fireflies (`fireflies.ts`) drift
+and blink over meadow and forest plants and along riverbanks: one `Points` mesh
+of at most 160.
+
+Water, wind and fireflies all read the water uniforms' clock. `AmbientMotion`
+advances it and requests the next frame only while effects are on, so with them
+off the canvas stays on demand rendering, with painted water and still
+plants.
 
 Stored road/store claims use cardinal directions, and field claims use corners.
 They are resolved to the matching feature before placing followers. Claims match exact tile coordinates, including

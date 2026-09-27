@@ -8,9 +8,10 @@ import type { ClaimableFeature, TileRecord } from "@/types";
 import { SceneryLibrary, SceneryPart } from "@/rendering/scenery";
 import { cornerWeights } from "@/rendering/regions";
 import { writeRegionAttributes } from "@/rendering/groundShader";
-import { type PlantInstances, plantInstances, SMALL_SPECIES } from "@/rendering/vegetation";
+import { type PlantInstances, plantInstances, SMALL_SPECIES, WINDPUMP_HUB } from "@/rendering/vegetation";
 import { Lod } from "@/rendering/lod";
 import { skyPose } from "@/rendering/skyPath";
+import { fireflySpots } from "@/rendering/fireflies";
 import { AT_REST, landingMatrix, type LandingFrame } from "@/rendering/landing";
 import {
   canonicalTile,
@@ -136,10 +137,55 @@ function PlantMesh({ plants, landing }: { plants: PlantInstances; landing?: Reac
     mesh.castShadow = lod !== Lod.Far;
     animate(mesh);
   });
+  const { material, depth } = library.plantMaterials(plants.species);
   return (
     <instancedMesh
       ref={ref}
-      args={[library.getSpecies(plants.species), library.paintMaterial(), plants.matrices.length]}
+      args={[library.getSpecies(plants.species), material, plants.matrices.length]}
+      customDepthMaterial={depth}
+      castShadow
+      receiveShadow
+    />
+  );
+}
+
+const HUB_OFFSET = new THREE.Matrix4().makeTranslation(WINDPUMP_HUB);
+
+/** Every windpump's wheel in one mesh, set on its tower's hub and turning in the wind. */
+function WindpumpWheels({
+  towers,
+  landing,
+}: {
+  towers: PlantInstances;
+  landing?: React.RefObject<LandingFrame | null>;
+}) {
+  const library = useContext(LibraryContext)!;
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const invalidate = useThree((state) => state.invalidate);
+  const wheels = useMemo(() => towers.matrices.map((tower) => tower.clone().multiply(HUB_OFFSET)), [towers]);
+  const animate = useLandingInstances(landing, towers.owners, (i, out) => out.copy(wheels[i]));
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    wheels.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    invalidate();
+  }, [wheels, invalidate]);
+  useFrame(({ camera }) => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    const lod = library.lod.update(camera.zoom);
+    mesh.geometry = library.getWindpumpWheel(lod !== Lod.Full);
+    mesh.castShadow = lod !== Lod.Far;
+    animate(mesh);
+  });
+  const { material, depth } = library.wheelMaterials();
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[library.getWindpumpWheel(), material, wheels.length]}
+      customDepthMaterial={depth}
       castShadow
       receiveShadow
     />
@@ -162,6 +208,11 @@ export function Vegetation({
       {groups.map((plants) => (
         <PlantMesh key={`${plants.species}-${plants.matrices.length}`} plants={plants} landing={landing} />
       ))}
+      {groups
+        .filter((plants) => plants.species === "windpump")
+        .map((towers) => (
+          <WindpumpWheels key={`wheels-${towers.matrices.length}`} towers={towers} landing={landing} />
+        ))}
     </>
   );
 }
@@ -473,8 +524,88 @@ export function NightLights({ night }: { night: boolean }) {
   return null;
 }
 
-/** Drives the animated water while extra effects are on; idle frames stay on demand otherwise. */
-export function WaterMotion({ enabled }: { enabled: boolean }) {
+const FIREFLY_VERTEX = /* glsl */ `
+attribute float phase;
+uniform float time;
+uniform float pointScale;
+varying float vGlow;
+void main() {
+  float t = time * 0.6 + phase * 40.0;
+  // A slow, looping drift a little above the plants.
+  vec3 p = position + vec3(
+    sin(t * 0.83 + phase * 6.0) * 0.035,
+    0.05 + 0.035 * (0.5 + 0.5 * sin(t * 0.57 + phase * 11.0)),
+    cos(t * 0.71 + phase * 9.0) * 0.035
+  );
+  // Mostly dim, with a bright blink now and then.
+  vGlow = smoothstep(0.35, 1.0, sin(time * 1.3 + phase * 31.0));
+  vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  gl_PointSize = pointScale * (2.2 + 3.4 * vGlow);
+}
+`;
+
+const FIREFLY_FRAGMENT = /* glsl */ `
+uniform vec3 color;
+varying float vGlow;
+void main() {
+  float glow = smoothstep(0.5, 0.0, length(gl_PointCoord - 0.5));
+  gl_FragColor = vec4(color * glow * (0.3 + 1.6 * vGlow), 1.0);
+}
+`;
+
+/** Fireflies over meadows, woods and riverbanks; the board mounts them only at night with extra effects. */
+export function Fireflies({ records, seed }: { records: TileRecord[]; seed?: number }) {
+  const library = useContext(LibraryContext)!;
+  const geometry = useMemo(() => {
+    const spots = fireflySpots(records, seed);
+    const result = new THREE.BufferGeometry();
+    result.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        spots.flatMap(({ at: [x, z] }) => [x, 0, z]),
+        3,
+      ),
+    );
+    result.setAttribute(
+      "phase",
+      new THREE.Float32BufferAttribute(
+        spots.map(({ phase }) => phase),
+        1,
+      ),
+    );
+    return result;
+  }, [records, seed]);
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: FIREFLY_VERTEX,
+        fragmentShader: FIREFLY_FRAGMENT,
+        uniforms: {
+          time: library.water.waterTime,
+          pointScale: { value: 1 },
+          color: { value: new THREE.Color("#e2ff7d") },
+        },
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    [library],
+  );
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame(({ camera, gl }) => {
+    // Points are sized in pixels, so follow the zoom and the screen's density.
+    material.uniforms.pointScale.value = gl.getPixelRatio() * THREE.MathUtils.clamp(camera.zoom / 90, 0.6, 2);
+  });
+  return <points geometry={geometry} material={material} />;
+}
+
+/**
+ * Drives the water, wind, windpumps and fireflies while extra effects are on;
+ * idle frames stay on demand otherwise. They all read the same clock.
+ */
+export function AmbientMotion({ enabled }: { enabled: boolean }) {
   const library = useContext(LibraryContext)!;
   const invalidate = useThree((state) => state.invalidate);
   useLayoutEffect(() => {
